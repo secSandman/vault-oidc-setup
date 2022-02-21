@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template creates Amazon EC2 Windows instance, assoicates a empty IAM role which Hashicorp vault can use to authneticate the isntance via AWS Auth Engine IAM
+  and related resources.
+
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    ConstraintDescription: must be the name of an existing EC2 KeyPair
+  InstanceType:
+    Description: Amazon EC2 instance type
+    Type: String
+    Default: m4.large
+    AllowedValues:
+      - t1.micro
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - m1.small
+      - m1.medium
+      - m1.large
+      - m1.xlarge
+      - m2.xlarge
+      - m2.2xlarge
+      - m2.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - c1.medium
+      - c1.xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - g2.2xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+      - hi1.4xlarge
+      - hs1.8xlarge
+      - cr1.8xlarge
+      - cc2.8xlarge
+      - cg1.4xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  SourceCidrForRDP:
+    Description: >-
+      IP Cidr from which you are likely to RDP into the instances. You can add
+      rules later by modifying the created security groups e.g. 54.32.98.160/32
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    AllowedPattern: '^([0-9]+\.){3}[0-9]+\/[0-9]+$'
+  SubID:
+    Description: Name of the subnet you want to deploy into 
+    Type: 'AWS::EC2::Subnet::Id'
+    ConstraintDescription: must be existing subnet id 
+
+  Ec2InstanceRoleName:
+    Description: Name of the IAM role that vault will use for AuthN
+    Type: String
+    ConstraintDescription: must be existing vault role name and not the role ARN
+       
+
+
+Mappings:
+  AWSRegion2AMI:
+  # Only US-EAST. New windows base AMI with user data PS script reset so that the user data actually launches. Other regions do not have new AMI so user data will fail 
+    us-east-1:
+      Windows2016base: ami-0afd083473f2fcfe6
+    us-east-2:
+      Windows2016base: ami-0e4f22bcdb62d60f8
+    us-west-1:
+      Windows2016base: ami-0033fb419ec2059cb
+    us-west-2:
+      Windows2016base: ami-00134213c3ad76118
+Resources:
+  WindowsFoundationSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable HTTP and RDP
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3389'
+          ToPort: '3389'
+          CidrIp: !Ref SourceCidrForRDP
+  WindowsFoundationEIP:
+    Type: 'AWS::EC2::EIP'
+    DependsOn: WindowsFoundation
+    Properties:
+      InstanceId: !Ref WindowsFoundation
+  WindowsFoundation:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !FindInMap 
+        - AWSRegion2AMI
+        - !Ref 'AWS::Region'
+        - Windows2016base
+      SecurityGroupIds:
+      - 'Fn::GetAtt':
+        - WindowsFoundationSecurityGroup
+        - GroupId
+      IamInstanceProfile: !Ref Ec2InstanceRoleName
+      KeyName: !Ref KeyName
+      SubnetId: !Ref SubID
+      UserData:
+        Fn::Base64: !Sub |
+      BlockDeviceMappings:
+        -
+          DeviceName: "/dev/sda1"
+          Ebs:
+            VolumeSize: 120
+            VolumeType: gp2
+            Encrypted: 'true'
